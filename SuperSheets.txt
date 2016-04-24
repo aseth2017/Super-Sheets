@@ -1,0 +1,92 @@
+/*
+Finds all new Online Form Submissions every hour that haven't been read and passes them through to readEmail and deletes all emails
+not sent from the online form
+*/
+//Eventually has to be on a loop
+function getInbox() {
+  var numUnread = GmailApp.getInboxUnreadCount();
+  if (numUnread > 0) {
+    var unreadMessages = GmailApp.getInboxThreads(0, numUnread);
+    for (var i = 0; i < unreadMessages.length; i++) {
+      var request = unreadMessages[i].getMessages()[0];
+      //why is it doing them in the wrong order
+      if (request.getFrom().equals("webmaster@pingry.org")) {
+        readEmail(request); 
+        }
+      else GmailApp.moveThreadToTrash(unreadMessages[i]);
+    }
+    GmailApp.markThreadsRead(unreadMessages);
+  }
+}
+
+/*
+* Parses the info from the email into the spreadsheet
+*/
+function readEmail(request) {
+  var raw = request.getRawContent();
+  raw = raw.substring(raw.indexOf("USERNAME"));
+  raw = raw.substring(raw.indexOf("USERNAME"), raw.indexOf("DEPT1")) + raw.substring(raw.indexOf("COURSE1"));
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheets()[0];
+  if (sheet.getSheetValues(2, 1, 1, 1)[0][0] !== "")
+    sheet.insertRowAfter(1);
+  //33 is last column num + 1, change to 35 when parent and coach are addded
+  for(var i = 1; i < 33 + 1 ; i++) {
+      //32 is last column num, change to 34 when parent and coach are added
+    if (i != 32)
+      sheet.getRange(2, i, 1, 1).setValue(raw.substring(raw.indexOf(sheet.getSheetValues(1, i, 1, 1)), raw.indexOf(sheet.getSheetValues(1, i + 1, 1, 1)))); 
+    else
+      sheet.getRange(2, i, 1, 1).setValue(raw.substring(raw.indexOf(sheet.getSheetValues(1, i, 1, 1))));
+    sheet.getRange(2, i, 1, 1).setValue(sheet.getSheetValues(2, i, 1, 1)[0][0].substring(sheet.getSheetValues(2, i, 1, 1)[0][0].indexOf(":") + 1));
+    if (typeof sheet.getSheetValues(2, i, 1, 1)[0][0] == "string")
+      sheet.getRange(2, i, 1, 1).setValue(sheet.getSheetValues(2, i, 1, 1)[0][0].replace(/(\r\n|\n|\r)/gm,""));
+  }
+}
+
+/*
+* Goes through new absence requests, designated by their background color, if white sends out and absence request to the parent
+*/
+function makeParentForm() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheets()[0];
+  for (var i = 2; i < sheet.getLastRow() + 1; i++) {
+    if (sheet.getRange("A" + i.toString()).getBackground() === "#ffffff") {
+      var form = FormApp.create(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + (sheet.getRange("G" + i.toString()).getDisplayValue()));
+      //these specific cells will have to change once parent and coach are incorporated 
+      form.setTitle(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + "Planned Absence Request");  
+      form.setRequireLogin(false);
+      form.setDescription("Destination and reason for request: " + sheet.getRange("P" + i.toString()).getValue() + "\n" + "\n");
+      
+      Logger.log(sheet.getRange("O" + i.toString()));
+      Logger.log(sheet.getRange("H" + i.toString()));
+     
+       //only doing 4 of twelve possible outcomes of the website, none of the ranges
+      if (sheet.getRange("O" + i.toString()).getValue() === "One day only") {
+        if (sheet.getRange("H" + i.toString()).getValue() === "Absent all day") {
+          form.setDescription(form.getDescription() + "Date of absence: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+        }
+        else if (sheet.getRange("H" + i.toString()).getValue() === "Coming late") {
+          form.setDescription(form.getDescription() + "Date of late arrival: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of late arrival: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+        }
+        else if (sheet.getRange("J" + i.toString()).getValue() === "I will not be returning to school the same day") {
+          form.setDescription(form.getDescription() + "Date of early departure: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of early departure: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+        }
+        else {
+          form.setDescription(form.getDescription() + "Date of leaving campus and returning: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of departure: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of return: " + sheet.getRange("K" + i.toString()).getDisplayValue());
+        }
+      }
+      //these specific cells will have to change once parent and coach are incorporated
+      
+      var question = form.addMultipleChoiceItem();
+      question.setTitle("Do you give permission for your child to miss school as stated above?");
+      question.setChoices([question.createChoice("Yes, I do."), question.createChoice("No, I don't.")]);
+      sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("red");
+    }
+   else
+     i = sheet.getLastRow() + 1;
+  }
+}
