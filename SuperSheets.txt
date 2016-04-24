@@ -22,6 +22,7 @@ function getInbox() {
 /*
 * Parses the info from the email into the spreadsheet
 */
+//change so it is independat 
 function readEmail(request) {
   var raw = request.getRawContent();
   raw = raw.substring(raw.indexOf("USERNAME"));
@@ -40,6 +41,7 @@ function readEmail(request) {
     sheet.getRange(2, i, 1, 1).setValue(sheet.getSheetValues(2, i, 1, 1)[0][0].substring(sheet.getSheetValues(2, i, 1, 1)[0][0].indexOf(":") + 1));
     if (typeof sheet.getSheetValues(2, i, 1, 1)[0][0] == "string")
       sheet.getRange(2, i, 1, 1).setValue(sheet.getSheetValues(2, i, 1, 1)[0][0].replace(/(\r\n|\n|\r)/gm,""));
+    sheet.autoResizeColumn(i);
   }
 }
 
@@ -51,14 +53,10 @@ function makeParentForm() {
   var sheet = ss.getSheets()[0];
   for (var i = 2; i < sheet.getLastRow() + 1; i++) {
     if (sheet.getRange("A" + i.toString()).getBackground() === "#ffffff") {
-      var form = FormApp.create(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + (sheet.getRange("G" + i.toString()).getDisplayValue()));
-      //these specific cells will have to change once parent and coach are incorporated 
+      var form = FormApp.create("Parent " + sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + (sheet.getRange("G" + i.toString()).getDisplayValue()));
       form.setTitle(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + "Planned Absence Request");  
       form.setRequireLogin(false);
       form.setDescription("Destination and reason for request: " + sheet.getRange("P" + i.toString()).getValue() + "\n" + "\n");
-      
-      Logger.log(sheet.getRange("O" + i.toString()));
-      Logger.log(sheet.getRange("H" + i.toString()));
      
        //only doing 4 of twelve possible outcomes of the website, none of the ranges
       if (sheet.getRange("O" + i.toString()).getValue() === "One day only") {
@@ -79,14 +77,72 @@ function makeParentForm() {
           form.setDescription(form.getDescription() + "\n" + "\n" + "Time of return: " + sheet.getRange("K" + i.toString()).getDisplayValue());
         }
       }
-      //these specific cells will have to change once parent and coach are incorporated
       
       var question = form.addMultipleChoiceItem();
+      question.setRequired(true);
       question.setTitle("Do you give permission for your child to miss school as stated above?");
       question.setChoices([question.createChoice("Yes, I do."), question.createChoice("No, I don't.")]);
       sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("red");
+      sheet.getRange("AI" + i.toString()).setValue(form.getId());
+      sheet.autoResizeColumn(35);
+      GmailApp.sendEmail("sscherl2017@pingry.org", "Pingry School Absence Request", "Your child has requested to miss school. Please click on the link below to see details and approve or reject his absence." + "\n" + "\n" + form.getPublishedUrl());
+      //change email to parent's email
     }
-   else
-     i = sheet.getLastRow() + 1;
+  }
+}
+
+
+function checkParentResponse () {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheets()[0];
+  for (var i = 2; i < sheet.getLastRow() + 1; i++) {
+    if (sheet.getRange("A" + i.toString()).getBackground() === "#ff0000") {
+      var responses = FormApp.openById(sheet.getRange("AI" + i.toString()).getValue()).getResponses();
+      if (responses.length != 0) {
+        //change email to student's email
+        if (responses[0].getItemResponses()[0].getResponse() === "No, I don't.") {
+          GmailApp.sendEmail("sscherl2017@pingry.org", "Requested Absence", "Your Parent has rejected your request for an absence. Please consult with them");
+          sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("grey");
+        }
+        else {
+          sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("blue");
+          var form = FormApp.create("Teacher " + sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + (sheet.getRange("G" + i.toString()).getDisplayValue()));
+          form.setTitle(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + "Planned Absence Request");
+          form.setRequireLogin(true);
+          form.setCollectEmail(true);
+          form.setDescription("Destination and reason for request: " + sheet.getRange("P" + i.toString()).getValue() + "\n" + "\n");
+     
+          //only doing 4 of twelve possible outcomes of the website, none of the ranges
+       if (sheet.getRange("O" + i.toString()).getValue() === "One day only") {
+        if (sheet.getRange("H" + i.toString()).getValue() === "Absent all day") {
+          form.setDescription(form.getDescription() + "Date of absence: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+        }
+        else if (sheet.getRange("H" + i.toString()).getValue() === "Coming late") {
+          form.setDescription(form.getDescription() + "Date of late arrival: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of late arrival: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+        }
+        else if (sheet.getRange("J" + i.toString()).getValue() === "I will not be returning to school the same day") {
+          form.setDescription(form.getDescription() + "Date of early departure: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of early departure: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+        }
+        else {
+          form.setDescription(form.getDescription() + "Date of leaving campus and returning: " + sheet.getRange("G" + i.toString()).getValue().toString().substring(0, 10) + ", " + sheet.getRange("G" + i.toString()).getValue().toString().substring(11, 15));
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of departure: " + sheet.getRange("I" + i.toString()).getDisplayValue());
+          form.setDescription(form.getDescription() + "\n" + "\n" + "Time of return: " + sheet.getRange("K" + i.toString()).getDisplayValue());
+        }
+      }
+          
+        var question = form.addParagraphTextItem();
+        question.setRequired(true);
+        question.setTitle("Please write down what work the student will be missing and what the student should do in order to make up for his/her absence. If you want the student to see you please make a not of that");
+        sheet.getRange("AJ" + i.toString()).setValue(form.getId());
+        sheet.autoResizeColumn(36);
+        GmailApp.sendEmail("sscherl2017@pingry.org", "Pingry School Absence Request", "One of your student will be missing school. Please click on the link below to see details and let them know what work they will be missing" + "\n" + "\n" + form.getPublishedUrl());
+        //change email to all of teacher's email
+        
+        
+        }     
+      } 
+    }
   }
 }
