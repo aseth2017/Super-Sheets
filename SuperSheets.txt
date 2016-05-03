@@ -9,7 +9,6 @@ function getInbox() {
     var unreadMessages = GmailApp.getInboxThreads(0, numUnread);
     for (var i = 0; i < unreadMessages.length; i++) {
       var request = unreadMessages[i].getMessages()[0];
-      //why is it doing them in the wrong order
       if (request.getFrom().equals("webmaster@pingry.org")) {
         readEmail(request); 
         }
@@ -85,13 +84,15 @@ function makeParentForm() {
       sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("red");
       sheet.getRange("AI" + i.toString()).setValue(form.getId());
       sheet.autoResizeColumn(35);
-      GmailApp.sendEmail("sscherl2017@pingry.org", "Pingry School Absence Request", "Your child has requested to miss school. Please click on the link below to see details and approve or reject his absence." + "\n" + "\n" + form.getPublishedUrl());
+      GmailApp.sendEmail("sscherl2017@pingry.org", "Pingry School Absence Request", "Your child has requested to miss school. Please click on the link below to see details and approve or reject his/her absence." + "\n" + "\n" + form.getPublishedUrl());
       //change email to parent's email
     }
   }
 }
 
-
+/*
+* Checks if the parent said their child can miss school, if not notifies the child, if so sends a form to all the teachers
+*/
 function checkParentResponse () {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheets()[0];
@@ -101,15 +102,18 @@ function checkParentResponse () {
       if (responses.length != 0) {
         //change email to student's email
         if (responses[0].getItemResponses()[0].getResponse() === "No, I don't.") {
-          GmailApp.sendEmail("sscherl2017@pingry.org", "Requested Absence", "Your Parent has rejected your request for an absence. Please consult with them");
+          GmailApp.sendEmail(sheet.getRange("A" + i.toString()).getValue() + "@pingry.org", "Rejected Absence Request", "Your Parent has rejected your request for an absence. Please consult with them");
           sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("grey");
         }
         else {
+          GmailApp.sendEmail(sheet.getRange("A" + i.toString()).getValue() + "@pingry.org", "Accepted Absence Request", "Your Parent has accepted your request for an absence. Your teachers will be notified of your absence.");
+          //email Coach, advisor, college advisor, mrs. peake, dba, and Dean ross
           sheet.getRange(i, 1, 1, sheet.getLastColumn()).setBackground("blue");
           var form = FormApp.create("Teacher " + sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + (sheet.getRange("G" + i.toString()).getDisplayValue()));
           form.setTitle(sheet.getRange("B" + i.toString()).getValue() + " " + sheet.getRange("C" + i.toString()).getValue() + " " + "Planned Absence Request");
           form.setRequireLogin(true);
           form.setCollectEmail(true);
+          form.setLimitOneResponsePerUser(true);
           form.setDescription("Destination and reason for request: " + sheet.getRange("P" + i.toString()).getValue() + "\n" + "\n");
      
           //only doing 4 of twelve possible outcomes of the website, none of the ranges
@@ -134,10 +138,13 @@ function checkParentResponse () {
           
         var question = form.addParagraphTextItem();
         question.setRequired(true);
-        question.setTitle("Please write down what work the student will be missing and what the student should do in order to make up for his/her absence. If you want the student to see you please make a not of that");
+        question.setTitle("Please write down what work the student will be missing and what the student should do in order to make up for his/her absence. If you want the student to see you please make a note of that.");
         sheet.getRange("AJ" + i.toString()).setValue(form.getId());
         sheet.autoResizeColumn(36);
-        GmailApp.sendEmail("sscherl2017@pingry.org", "Pingry School Absence Request", "One of your student will be missing school. Please click on the link below to see details and let them know what work they will be missing" + "\n" + "\n" + form.getPublishedUrl());
+        for (var j = 25; j < 33; j++) {
+          if (sheet.getRange(i, j).getValue() !== "")
+            GmailApp.sendEmail(sheet.getRange(i, j).getValue() + "@pingry.org", "Pingry School Absence Request", "One of your students will be missing school. Please click on the link below to see details and let them know what work they will be missing" + "\n" + "\n" + form.getPublishedUrl());
+        }
         //change email to all of teacher's email
         
         
@@ -145,4 +152,32 @@ function checkParentResponse () {
       } 
     }
   }
+}
+
+/*
+* Checks if any new teachers have filled out absence forms and sends an email to the student
+*/
+function checkTeacherResponse() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheets()[0];
+  for (var i = 2; i < sheet.getLastRow() + 1; i++) {
+    if (sheet.getRange("A" + i.toString()).getBackground() === "#0000ff") {
+      var responses = FormApp.openById(sheet.getRange("AJ" + i.toString()).getValue()).getResponses();
+      if (responses.length != 0) {
+        for (var j = 0; j < responses.length; j++) {
+          //change to students email
+          Logger.log(responses[j].getItemResponses()[0].getResponse());
+          GmailApp.sendEmail(sheet.getRange("A" + i.toString()).getValue() + "@pingry.org", "Missing Work", "Teacher username: " + responses[j].getRespondentEmail().substring(0,responses[j].getRespondentEmail().indexOf("@pingry.org")) + "\n" + "\n" + "What work you will be missing and what you need to do in order to make up work: " + responses[j].getItemResponses()[0].getResponse());
+        }
+      }
+    }
+    var form = FormApp.openById(sheet.getRange("AJ" + i.toString()).getValue());
+    form.deleteAllResponses();
+  }
+}
+
+function moveFiles() {
+  var files = DriveApp.getRootFolder().getFiles();
+  while (files.hasNext())
+    files.next().makeCopy();
 }
